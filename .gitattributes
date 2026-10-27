@@ -1,0 +1,2 @@
+vendor/*.min.js -diff linguist-vendored
+vendor/*.md linguist-documentation

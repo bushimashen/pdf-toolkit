@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PDF 工具箱 · 合并 / 拆分 / 删除页 / 旋转 / 水印 / 页码（纯本地，不上传）</title>
+<meta name="description" content="浏览器本地处理 PDF：合并多份、按页码拆分、删除指定页、整页旋转、加文字水印、加页码。文件不上传服务器，离线可用。" />
+<meta property="og:title" content="PDF 工具箱 · PDF Toolkit" />
+<meta property="og:description" content="合并 / 拆分 / 删除页 / 旋转 / 水印 / 页码，全部在浏览器本地完成，PDF 不上传。" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232563eb' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6.5A2.5 2.5 0 0 0 4 4.5v15A2.5 2.5 0 0 0 6.5 22h11a2.5 2.5 0 0 0 2.5-2.5V8z'/%3E%3Cpath d='M14 2v6h6'/%3E%3Cpath d='M8.5 13h7M8.5 17h4.5'/%3E%3C/svg%3E" />
+<style>
+[hidden] { display: none !important; }
+
+:root {
+  --bg: #f5f6fa; --surface: #fff; --surface2: #f2f4f9; --surface3: #e9edf6;
+  --text: #1b2130; --muted: #6b7385; --border: #e2e6ef;
+  --primary: #2563eb; --purple: #7c3aed; --ok: #17a673; --warn: #d97706; --danger: #e11d48;
+  --shadow: 0 8px 28px rgba(23, 32, 64, .08);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1017; --surface: #151a24; --surface2: #1b2130; --surface3: #232b3a;
+    --text: #e8ecf4; --muted: #8b93a7; --border: #262d3b;
+    --shadow: 0 10px 34px rgba(0, 0, 0, .45);
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text); min-height: 100vh;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 14px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+}
+.page { max-width: 1000px; margin: 0 auto; padding: 30px 20px 60px; }
+
+.head h1 { margin: 0 0 8px; font-size: 27px; letter-spacing: -.3px; }
+.head p { margin: 0 0 22px; color: var(--muted); max-width: 780px; }
+.head b { color: var(--text); }
+
+/* ---------- 页签 ---------- */
+.tabs {
+  display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 13px; padding: 5px;
+}
+.tab {
+  font-size: 13.5px; padding: 8px 18px; border-radius: 9px;
+  border: none; background: transparent; color: var(--muted);
+  cursor: pointer; font-family: inherit; font-weight: 600; transition: background .15s, color .15s;
+}
+.tab:hover { color: var(--text); }
+.tab.on {
+  background: var(--surface); color: var(--primary);
+  box-shadow: 0 1px 3px rgba(23, 32, 64, .1);
+}
+@media (prefers-color-scheme: dark) { .tab.on { background: var(--surface3); color: #7ea6ff; } }
+
+/* ---------- 面板 ---------- */
+.panel {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 16px; padding: 18px 20px; box-shadow: var(--shadow);
+}
+.panel-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+.panel-head h2 { margin: 0; font-size: 16.5px; }
+.panel-head .sub { color: var(--muted); font-size: 12.5px; }
+
+/* ---------- 拖拽区 ---------- */
+.drop {
+  margin-top: 14px; border: 1.5px dashed var(--border); border-radius: 14px;
+  background: var(--surface2); padding: 22px 20px; text-align: center; cursor: pointer;
+  transition: border-color .18s, background .18s;
+}
+.drop:hover, .drop.drag { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 6%, var(--surface)); }
+.drop .ico { font-size: 23px; line-height: 1; margin-bottom: 6px; }
+.drop h3 { margin: 0 0 2px; font-size: 14.5px; }
+.drop p { margin: 0; color: var(--muted); font-size: 12.5px; }
+
+/* ---------- 文件列表 ---------- */
+.flist { list-style: none; padding: 0; margin: 12px 0 0; display: flex; flex-direction: column; gap: 7px; }
+.flist li {
+  display: flex; align-items: center; gap: 10px; font-size: 13px;
+  border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px;
+  background: var(--surface2);
+}
+.flist .idx {
+  color: #fff; background: var(--primary); font-weight: 700; font-size: 11.5px;
+  min-width: 21px; height: 21px; border-radius: 6px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.flist .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flist .sz { color: var(--muted); font-variant-numeric: tabular-nums; }
+.flist .ops { display: flex; gap: 4px; }
+.flist .ops button {
+  border: 1px solid var(--border); background: var(--surface); color: var(--muted);
+  border-radius: 6px; cursor: pointer; font-size: 12px; padding: 2px 8px; font-family: inherit;
+}
+.flist .ops button:hover:not(:disabled) { color: var(--text); border-color: var(--muted); }
+.flist .ops button:disabled { opacity: .3; cursor: default; }
+
+/* ---------- 表单 ---------- */
+.rows { display: flex; flex-direction: column; gap: 14px; margin-top: 16px; }
+.row { display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-start; }
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.field.grow { flex: 1; min-width: 220px; }
+.field > label { font-size: 12px; color: var(--muted); font-weight: 600; letter-spacing: .2px; }
+.field > label b { color: var(--text); font-variant-numeric: tabular-nums; }
+input[type="text"], input[type="number"] {
+  background: var(--surface2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 9px; padding: 8px 11px; font-size: 13.5px; font-family: inherit;
+  width: 100%; min-width: 180px; outline: none;
+}
+input[type="text"]:focus, input[type="number"]:focus { border-color: var(--primary); }
+input[type="range"] { width: 170px; accent-color: var(--primary); }
+input[type="color"] {
+  width: 48px; height: 32px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface2); padding: 3px; cursor: pointer;
+}
+select {
+  background: var(--surface2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 9px; padding: 8px 10px; font-size: 13.5px; font-family: inherit;
+  outline: none; min-width: 150px;
+}
+.hint { font-size: 11.5px; color: var(--muted); }
+.hint code, .note code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .93em; background: var(--surface3); color: var(--text);
+  padding: 0 4px; border-radius: 4px;
+}
+.field-col { display: flex; flex-direction: column; gap: 12px; }
+.field-col .inline { display: flex; align-items: center; gap: 10px; }
+.field-col .inline > span { font-size: 12px; color: var(--muted); min-width: 78px; }
+.field-col .inline > span b { color: var(--text); font-variant-numeric: tabular-nums; }
+.seg { display: inline-flex; gap: 5px; flex-wrap: wrap; }
+.seg button {
+  font-size: 13px; padding: 7px 15px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--surface2); color: var(--muted);
+  cursor: pointer; font-family: inherit; font-weight: 600;
+}
+.seg button.on { border-color: var(--primary); color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, var(--surface)); }
+
+/* 3x3 位置九宫格 */
+.grid9 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; width: 210px; }
+.grid9 button {
+  font-size: 12px; padding: 7px 0; border-radius: 7px; font-family: inherit;
+  border: 1px solid var(--border); background: var(--surface2); color: var(--muted); cursor: pointer;
+}
+.grid9 button.on { border-color: var(--primary); color: var(--primary); font-weight: 700; background: color-mix(in srgb, var(--primary) 12%, var(--surface)); }
+
+/* ---------- 执行区 ---------- */
+.run { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 20px; }
+.btn {
+  border: 1px solid var(--border); background: var(--surface2); color: var(--text);
+  border-radius: 10px; padding: 10px 18px; font-size: 13.5px; font-weight: 600;
+  cursor: pointer; font-family: inherit; white-space: nowrap;
+}
+.btn:hover { background: var(--surface3); }
+.btn.primary {
+  background: linear-gradient(135deg, var(--primary), var(--purple));
+  border: none; color: #fff; padding: 11px 26px; font-size: 14px;
+}
+.btn.primary:hover:not(:disabled) { filter: brightness(1.09); }
+.btn:disabled { opacity: .45; cursor: default; }
+.status { color: var(--muted); font-size: 13px; }
+.status.err { color: var(--danger); font-weight: 600; }
+.status.ok { color: var(--ok); font-weight: 600; }
+
+.foot {
+  display: flex; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+  margin-top: 26px; padding-top: 16px; border-top: 1px solid var(--border);
+  color: var(--muted); font-size: 12.5px;
+}
+.foot a { color: var(--muted); text-decoration: none; border-bottom: 1px solid transparent; }
+.foot a:hover { color: var(--primary); border-bottom-color: currentColor; }
+
+.note {
+  margin-top: 14px; padding: 11px 14px; border-radius: 11px; font-size: 12.5px;
+  background: color-mix(in srgb, var(--primary) 7%, var(--surface2));
+  border: 1px solid color-mix(in srgb, var(--primary) 20%, var(--border));
+  color: var(--muted);
+}
+.note b { color: var(--text); }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="head">
+    <h1>PDF 工具箱</h1>
+    <p>
+      浏览器本地处理 PDF：<b>合并 / 拆分 / 删除页 / 旋转 / 水印 / 页码</b>，处理完直接下载。
+      文件<b>不上传任何服务器</b>，断网也能用。
+    </p>
+  </header>
+
+  <nav class="tabs" id="tabs">
+    <button type="button" class="tab on" data-tab="merge">合并</button>
+    <button type="button" class="tab" data-tab="split">拆分</button>
+    <button type="button" class="tab" data-tab="delete">删除页</button>
+    <button type="button" class="tab" data-tab="rotate">旋转</button>
+    <button type="button" class="tab" data-tab="watermark">水印</button>
+    <button type="button" class="tab" data-tab="pagenum">页码</button>
+  </nav>
+
+  <!-- ============ 合并 ============ -->
+  <section class="panel" data-panel="merge">
+    <div class="panel-head">
+      <h2>合并 PDF</h2>
+      <span class="sub">按列表顺序拼接，可用 ↑ ↓ 调整次序</span>
+    </div>
+    <div class="drop" id="mergeDrop">
+      <div class="ico">📄</div>
+      <h3>选择或拖入多份 PDF</h3>
+      <p>可一次多选，也可以分多次追加</p>
+      <input type="file" id="mergeInput" accept="application/pdf,.pdf" multiple hidden />
+    </div>
+    <ul class="flist" id="mergeList" hidden></ul>
+    <div class="run">
+      <button type="button" class="btn primary" id="mergeRun" disabled>合并下载</button>
+      <button type="button" class="btn" id="mergeClear" hidden>清空列表</button>
+      <span class="status" id="mergeStatus"></span>
+    </div>
+  </section>
+
+  <!-- ============ 单文件类通用外壳 ============ -->
+  <section class="panel" data-panel="split" hidden>
+    <div class="panel-head">
+      <h2>拆分 / 挑选页码</h2>
+      <span class="sub">只保留你指定的页，导出成一份新 PDF</span>
+    </div>
+    <div class="drop" id="splitDrop">
+      <div class="ico">✂️</div>
+      <h3>选择要拆分的 PDF</h3>
+      <p id="splitMeta">点击选择或拖入文件</p>
+      <input type="file" id="splitInput" accept="application/pdf,.pdf" hidden />
+    </div>
+    <div class="rows">
+      <div class="row">
+        <div class="field grow">
+          <label>保留页码</label>
+          <input type="text" id="splitPages" placeholder="例：1-3,5,8-  （留空 = 全部页）" />
+          <span class="hint">从 1 开始；<code>8-</code> 表示第 8 页到末页；超出范围自动忽略；导出的页序会按页码升序</span>
+        </div>
+      </div>
+    </div>
+    <div class="run">
+      <button type="button" class="btn primary" id="splitRun" disabled>拆分导出</button>
+      <span class="status" id="splitStatus"></span>
+    </div>
+  </section>
+
+  <section class="panel" data-panel="delete" hidden>
+    <div class="panel-head">
+      <h2>删除指定页</h2>
+      <span class="sub">把不要的页去掉，其余页原样保留</span>
+    </div>
+    <div class="drop" id="deleteDrop">
+      <div class="ico">🗑️</div>
+      <h3>选择要删除页的 PDF</h3>
+      <p id="deleteMeta">点击选择或拖入文件</p>
+      <input type="file" id="deleteInput" accept="application/pdf,.pdf" hidden />
+    </div>
+    <div class="rows">
+      <div class="row">
+        <div class="field grow">
+          <label>要删除的页码</label>
+          <input type="text" id="deletePages" placeholder="例：1,4-6  （必填，留空无效）" />
+          <span class="hint">从 1 开始；删完不能一页不剩，会提示错误</span>
+        </div>
+      </div>
+    </div>
+    <div class="run">
+      <button type="button" class="btn primary" id="deleteRun" disabled>删除后下载</button>
+      <span class="status" id="deleteStatus"></span>
+    </div>
+  </section>
+
+  <section class="panel" data-panel="rotate" hidden>
+    <div class="panel-head">
+      <h2>旋转页面</h2>
+      <span class="sub">顺/逆时针整页旋转，可只作用于部分页</span>
+    </div>
+    <div class="drop" id="rotateDrop">
+      <div class="ico">🔄</div>
+      <h3>选择要旋转的 PDF</h3>
+      <p id="rotateMeta">点击选择或拖入文件</p>
+      <input type="file" id="rotateInput" accept="application/pdf,.pdf" hidden />
+    </div>
+    <div class="rows">
+      <div class="row">
+        <div class="field">
+          <label>旋转角度</label>
+          <div class="seg" id="rotateSeg">
+            <button type="button" class="on" data-deg="90">90° 顺时针</button>
+            <button type="button" data-deg="180">180° 倒转</button>
+            <button type="button" data-deg="270">270° 逆时针</button>
+          </div>
+        </div>
+        <div class="field grow">
+          <label>作用页码</label>
+          <input type="text" id="rotatePages" placeholder="留空 = 全部页" />
+          <span class="hint">写法同拆分：<code>1-3,5</code></span>
+        </div>
+      </div>
+    </div>
+    <div class="run">
+      <button type="button" class="btn primary" id="rotateRun" disabled>旋转后下载</button>
+      <span class="status" id="rotateStatus"></span>
+    </div>
+  </section>
+
+  <section class="panel" data-panel="watermark" hidden>
+    <div class="panel-head">
+      <h2>加文字水印</h2>
+      <span class="sub">支持中文、任意字体与颜色</span>
+    </div>
+    <div class="drop" id="wmDrop">
+      <div class="ico">💧</div>
+      <h3>选择要加水印的 PDF</h3>
+      <p id="wmMeta">点击选择或拖入文件</p>
+      <input type="file" id="wmInput" accept="application/pdf,.pdf" hidden />
+    </div>
+    <div class="rows">
+      <div class="row">
+        <div class="field grow">
+          <label>水印文字</label>
+          <input type="text" id="wmText" value="内部资料 · 请勿外传" placeholder="如：内部资料 / 站点域名 / DO NOT COPY" />
+        </div>
+        <div class="field">
+          <label>颜色</label>
+          <input type="color" id="wmColor" value="#8a8f99" />
+        </div>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label>位置</label>
+          <div class="grid9" id="wmPos">
+            <button type="button" data-pos="左上">左上</button>
+            <button type="button" data-pos="上中">上中</button>
+            <button type="button" data-pos="右上">右上</button>
+            <button type="button" data-pos="左中">左中</button>
+            <button type="button" class="on" data-pos="居中">居中</button>
+            <button type="button" data-pos="右中">右中</button>
+            <button type="button" data-pos="左下">左下</button>
+            <button type="button" data-pos="下中">下中</button>
+            <button type="button" data-pos="右下">右下</button>
+          </div>
+        </div>
+        <div class="field field-col" style="justify-content:flex-end">
+          <div class="inline">
+            <span>字号 <b id="wmSizeVal">42</b> px</span>
+            <input type="range" id="wmSize" min="12" max="96" value="42" />
+          </div>
+          <div class="inline">
+            <span>透明度 <b id="wmOpVal">18</b> %</span>
+            <input type="range" id="wmOpacity" min="5" max="100" value="18" />
+          </div>
+          <div class="inline">
+            <span>角度 <b id="wmAngleVal">-30</b>°</span>
+            <input type="range" id="wmAngle" min="-90" max="90" step="15" value="-30" />
+          </div>
+        </div>
+      </div>
+      <div class="row">
+        <label class="chk" style="display:flex;align-items:center;gap:7px;font-size:13px;color:var(--muted);cursor:pointer">
+          <input type="checkbox" id="wmTile" style="accent-color:var(--primary)" />
+          平铺满页（更适合防截屏，位置九宫格失效）
+        </label>
+      </div>
+    </div>
+    <div class="run">
+      <button type="button" class="btn primary" id="wmRun" disabled>加水印后下载</button>
+      <span class="status" id="wmStatus"></span>
+    </div>
+  </section>
+
+  <section class="panel" data-panel="pagenum" hidden>
+    <div class="panel-head">
+      <h2>加页码</h2>
+      <span class="sub">打印/装订场景的小工具</span>
+    </div>
+    <div class="drop" id="pnDrop">
+      <div class="ico">🔢</div>
+      <h3>选择要加页码的 PDF</h3>
+      <p id="pnMeta">点击选择或拖入文件</p>
+      <input type="file" id="pnInput" accept="application/pdf,.pdf" hidden />
+    </div>
+    <div class="rows">
+      <div class="row">
+        <div class="field">
+          <label>样式</label>
+          <select id="pnFormat">
+            <option value="plain">1</option>
+            <option value="slash">1 / N</option>
+            <option value="dash">- 1 -</option>
+            <option value="pageof">Page 1 of N</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>位置</label>
+          <select id="pnPos">
+            <option value="bc">底部居中</option>
+            <option value="br">右下角</option>
+            <option value="bl">左下角</option>
+            <option value="tc">顶部居中</option>
+            <option value="tr">右上角</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>起始编号</label>
+          <input type="number" id="pnStart" value="1" min="1" max="9999" style="min-width:100px" />
+        </div>
+        <div class="field">
+          <label>字号：<b id="pnSizeVal">11</b> pt</label>
+          <input type="range" id="pnSize" min="7" max="24" value="11" />
+        </div>
+        <div class="field">
+          <label>颜色</label>
+          <input type="color" id="pnColor" value="#333333" />
+        </div>
+      </div>
+      <div class="row">
+        <div class="field grow">
+          <label>只给这些页编号（可选）</label>
+          <input type="text" id="pnPages" placeholder="留空 = 全部页；例：2- 表示从第 2 页开始" />
+        </div>
+      </div>
+    </div>
+    <div class="run">
+      <button type="button" class="btn primary" id="pnRun" disabled>加页码后下载</button>
+      <span class="status" id="pnStatus"></span>
+    </div>
+    <div class="note">
+      <b>说明：</b>页码用 PDF 标准字体 Helvetica 绘制，只含数字与半角符号，任何阅读器都不会缺字。
+    </div>
+  </section>
+
+  <div class="note">
+    <b>隐私：</b>所有解析、改写、导出都在你自己的浏览器里完成（<code>pdf-lib</code> 本地运行），
+    文件不会离开这台设备；关掉网络也照样能用。原文件不会被修改，导出的是一份新文件。
+  </div>
+
+  <footer class="foot">
+    <span>纯本地 · 零上传 · 基于 pdf-lib</span>
+    <span>
+      <a href="https://github.com/bushimashen/pdf-toolkit" target="_blank" rel="noopener">GitHub</a>
+      · <a href="https://gitee.com/codegoder/pdf-toolkit" target="_blank" rel="noopener">Gitee</a>
+    </span>
+  </footer>
+</div>
+
+<script src="vendor/pdf-lib.min.js"></script>
+<script>
+(function () {
+  'use strict'
+
+  var PDFLib = window.PDFLib
+  var PDFDocument = PDFLib && PDFLib.PDFDocument
+  var degrees = PDFLib && PDFLib.degrees
+  var rgb = PDFLib && PDFLib.rgb
+  var StandardFonts = PDFLib && PDFLib.StandardFonts
+
+  function $(id) { return document.getElementById(id) }
+  function fmtSize(n) {
+    if (n >= 1048576) return (n / 1048576).toFixed(1) + ' MB'
+    if (n >= 1024) return Math.round(n / 1024) + ' KB'
+    return n + ' B'
+  }
+  function setStatus(el, text, kind) {
+    el.textContent = text || ''
+    el.className = 'status' + (kind ? ' ' + kind : '')
+  }
+  function baseName(name) { return String(name || 'document').replace(/\.pdf$/i, '') }
+  function isPdf(f) { return f && (f.type === 'application/pdf' || /\.pdf$/i.test(f.name || '')) }
+
+  if (!PDFDocument) {
+    document.querySelector('.page').insertAdjacentHTML('afterbegin',
+      '<div class="note" style="border-color:#e11d48;color:#e11d48">' +
+      '<b>pdf-lib 未能加载。</b>请确认 <code>vendor/pdf-lib.min.js</code> 存在（如果是直接双击打开本地文件，浏览器可能限制脚本加载，请用本地服务器或部署后的页面打开）。</div>')
+    return
+  }
+
+  /* ---------------- 通用：拖拽 + 选择 ---------------- */
+  function wireDrop(dropEl, inputEl, opts) {
+    opts = opts || {}
+    var onFiles = opts.onFiles
+    dropEl.addEventListener('click', function () { inputEl.click() })
+    ;['dragenter', 'dragover'].forEach(function (ev) {
+      dropEl.addEventListener(ev, function (e) { e.preventDefault(); dropEl.classList.add('drag') })
+    })
+    dropEl.addEventListener('dragleave', function () { dropEl.classList.remove('drag') })
+    dropEl.addEventListener('drop', function (e) {
+      e.preventDefault()
+      dropEl.classList.remove('drag')
+      var fs = e.dataTransfer && e.dataTransfer.files
+      if (fs && fs.length) onFiles(Array.prototype.slice.call(fs))
+    })
+    inputEl.addEventListener('change', function (e) {
+      var fs = Array.prototype.slice.call(e.target.files || [])
+      e.target.value = ''
+      if (fs.length) onFiles(fs)
+    })
+  }
+
+  /* ---------------- 页签切换 ---------------- */
+  var tabsEl = $('tabs')
+  var panels = Array.prototype.slice.call(document.querySelectorAll('[data-panel]'))
+  tabsEl.addEventListener('click', function (e) {
+    var btn = e.target.closest('.tab')
+    if (!btn) return
+    var id = btn.getAttribute('data-tab')
+    Array.prototype.forEach.call(tabsEl.querySelectorAll('.tab'), function (b) {
+      b.classList.toggle('on', b === btn)
+    })
+    panels.forEach(function (p) { p.hidden = p.getAttribute('data-panel') !== id })
+    if (history.replaceState) history.replaceState(null, '', '#' + id)
+  })
+  ;(function initTabFromHash() {
+    var id = (location.hash || '').replace('#', '')
+    var btn = id && tabsEl.querySelector('.tab[data-tab="' + id + '"]')
+    if (btn) btn.click()
+  })()
+
+  /* ---------------- 页码表达式解析 ---------------- */
+  /* "1-3,5,8-" → Set(1..total)；空串 = 全部页 */
+  function parsePages(expr, total) {
+    var s = new Set()
+    var raw = String(expr || '').trim()
+    if (!raw) {
+      for (var i = 1; i <= total; i++) s.add(i)
+      return s
+    }
+    raw.split(/[,，、\s]+/).forEach(function (part) {
+      part = part.trim()
+      if (!part) return
+      var m = part.match(/^(\d+)\s*(?:-\s*(\d*))?$/)
+      if (!m) return
+      var a = parseInt(m[1], 10)
+      if (!(a >= 1)) return
+      var hasDash = m[0].indexOf('-') >= 0
+      var b
+      if (!hasDash) b = a
+      else if (m[2]) b = parseInt(m[2], 10)
+      else b = total
+      if (b < a) { var t = a; a = b; b = t }
+      var end = Math.min(b, total)
+      for (var i = a; i <= end; i++) s.add(i)
+    })
+    return s
+  }
+
+  /* ---------------- 读 / 存 ---------------- */
+  function loadDoc(file) {
+    return file.arrayBuffer().then(function (buf) {
+      return PDFDocument.load(buf, { ignoreEncryption: true, updateMetadata: false })
+    })
+  }
+  function savePdf(doc, name) {
+    var t0 = Date.now()
+    return doc.save({ useObjectStreams: true }).then(function (bytes) {
+      var blob = new Blob([bytes], { type: 'application/pdf' })
+      var url = URL.createObjectURL(blob)
+      var a = document.createElement('a')
+      a.href = url
+      a.download = name
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      setTimeout(function () { URL.revokeObjectURL(url) }, 4000)
+      return { size: blob.size, ms: Date.now() - t0 }
+    })
+  }
+
+  /* ================= 1. 合并 ================= */
+  var mergeFiles = []
+  var mergeListEl = $('mergeList')
+  var mergeRunEl = $('mergeRun')
+  var mergeClearEl = $('mergeClear')
+  var mergeStEl = $('mergeStatus')
+
+  function renderMergeList() {
+    mergeListEl.innerHTML = ''
+    mergeListEl.hidden = mergeFiles.length === 0
+    mergeClearEl.hidden = mergeFiles.length === 0
+    mergeFiles.forEach(function (f, i) {
+      var li = document.createElement('li')
+
+      var idx = document.createElement('span')
+      idx.className = 'idx'
+      idx.textContent = String(i + 1)
+
+      var nm = document.createElement('span')
+      nm.className = 'nm'
+      nm.textContent = f.name
+      nm.title = f.name
+
+      var sz = document.createElement('span')
+      sz.className = 'sz'
+      sz.textContent = fmtSize(f.size)
+
+      var ops = document.createElement('span')
+      ops.className = 'ops'
+      var up = document.createElement('button')
+      up.type = 'button'; up.textContent = '↑'; up.disabled = i === 0
+      up.addEventListener('click', function () { swapMerge(i, -1) })
+      var dn = document.createElement('button')
+      dn.type = 'button'; dn.textContent = '↓'; dn.disabled = i === mergeFiles.length - 1
+      dn.addEventListener('click', function () { swapMerge(i, 1) })
+      var rm = document.createElement('button')
+      rm.type = 'button'; rm.textContent = '✕'
+      rm.addEventListener('click', function () { mergeFiles.splice(i, 1); renderMergeList() })
+      ops.appendChild(up); ops.appendChild(dn); ops.appendChild(rm)
+
+      li.appendChild(idx); li.appendChild(nm); li.appendChild(sz); li.appendChild(ops)
+      mergeListEl.appendChild(li)
+    })
+    mergeRunEl.disabled = mergeFiles.length < 2
+    mergeRunEl.textContent = mergeFiles.length < 2
+      ? '合并下载（至少 2 份）'
+      : '合并下载（' + mergeFiles.length + ' 份）'
+  }
+  function swapMerge(i, d) {
+    var j = i + d
+    if (j < 0 || j >= mergeFiles.length) return
+    var t = mergeFiles[i]; mergeFiles[i] = mergeFiles[j]; mergeFiles[j] = t
+    renderMergeList()
+  }
+
+  wireDrop($('mergeDrop'), $('mergeInput'), {
+    onFiles: function (fs) {
+      var n = 0
+      fs.forEach(function (f) { if (isPdf(f)) { mergeFiles.push(f); n++ } })
+      setStatus(mergeStEl, n ? ('已加入 ' + n + ' 份') : '只能选 PDF 文件', n ? 'ok' : 'err')
+      renderMergeList()
+    }
+  })
+  mergeClearEl.addEventListener('click', function () {
+    mergeFiles = []
+    renderMergeList()
+    setStatus(mergeStEl, '')
+  })
+  mergeRunEl.addEventListener('click', function () {
+    if (mergeFiles.length < 2) return
+    mergeRunEl.disabled = true
+    setStatus(mergeStEl, '正在合并…')
+    var t0 = Date.now()
+    var out
+    PDFDocument.create().then(function (doc) {
+      out = doc
+      var chain = Promise.resolve()
+      mergeFiles.forEach(function (f) {
+        chain = chain.then(function () {
+          return loadDoc(f).then(function (src) {
+            return out.copyPages(src, src.getPageIndices())
+          }).then(function (pages) {
+            pages.forEach(function (p) { out.addPage(p) })
+          })
+        })
+      })
+      return chain
+    }).then(function () {
+      return savePdf(out, 'merged.pdf')
+    }).then(function (info) {
+      setStatus(mergeStEl, '完成 · ' + out.getPageCount() + ' 页 · ' + fmtSize(info.size) + ' · ' + ((Date.now() - t0) / 1000).toFixed(1) + 's', 'ok')
+    }).catch(function (err) {
+      setStatus(mergeStEl, '合并失败：' + (err && err.message ? err.message : err), 'err')
+    }).then(function () {
+      mergeRunEl.disabled = mergeFiles.length < 2
+    })
+  })
+
+  /* ================= 单文件类：拆分 / 删除 / 旋转 / 水印 / 页码 ================= */
+  function makeSinglePane(cfg) {
+    var state = { file: null, pages: 0 }
+    var metaEl = $(cfg.metaId)
+    var runEl = $(cfg.runId)
+    var stEl = $(cfg.statusId)
+
+    wireDrop($(cfg.dropId), $(cfg.inputId), {
+      onFiles: function (fs) {
+        var f = fs.filter(isPdf)[0]
+        if (!f) { setStatus(stEl, '只能选 PDF 文件', 'err'); return }
+        state.file = f
+        state.pages = 0
+        metaEl.textContent = '已选：' + f.name + '（' + fmtSize(f.size) + '）· 正在读取页数…'
+        setStatus(stEl, '')
+        loadDoc(f).then(function (doc) {
+          state.pages = doc.getPageCount()
+          metaEl.textContent = '已选：' + f.name + '（' + fmtSize(f.size) + '）· 共 ' + state.pages + ' 页'
+          cfg.onReady && cfg.onReady(state, true)
+        }).catch(function (err) {
+          state.file = null
+          state.pages = 0
+          metaEl.textContent = '点击选择或拖入文件'
+          cfg.onReady && cfg.onReady(state, false)
+          setStatus(stEl, '这个 PDF 打不开：' + (err && err.message ? err.message : err), 'err')
+        })
+      }
+    })
+    return state
+  }
+
+  function guard(runEl, stEl, state, extraOk) {
+    if (!state.file) { setStatus(stEl, '请先选择 PDF 文件', 'err'); return false }
+    if (!state.pages) { setStatus(stEl, '还没读到页数，稍等一下再点', 'err'); return false }
+    if (extraOk && !extraOk()) return false
+    return true
+  }
+
+  function done(stEl, label, info, extra) {
+    setStatus(stEl, '完成 · ' + label + ' · ' + fmtSize(info.size) +
+      ' · ' + (info.ms / 1000).toFixed(1) + 's' + (extra ? ' · ' + extra : ''), 'ok')
+  }
+  function fail(stEl, label, err) {
+    setStatus(stEl, label + '失败：' + (err && err.message ? err.message : err), 'err')
+  }
+
+  /* ---- 拆分 ---- */
+  var splitState = makeSinglePane({
+    dropId: 'splitDrop', inputId: 'splitInput', metaId: 'splitMeta',
+    runId: 'splitRun', statusId: 'splitStatus',
+    onReady: function (s, ok) { $('splitRun').disabled = !ok }
+  })
+  $('splitRun').addEventListener('click', function () {
+    var st = $('splitStatus')
+    if (!guard($('splitRun'), st, splitState)) return
+    var total = splitState.pages
+    var keep = parsePages($('splitPages').value, total)
+    var list = Array.from(keep).sort(function (a, b) { return a - b })
+    if (!list.length) { setStatus(st, '没有解析出有效页码（写法示例：1-3,5）', 'err'); return }
+    var btn = $('splitRun'); btn.disabled = true
+    setStatus(st, '正在导出…')
+    loadDoc(splitState.file).then(function (src) {
+      return PDFDocument.create().then(function (out) {
+        return out.copyPages(src, list.map(function (i) { return i - 1 })).then(function (pages) {
+          pages.forEach(function (p) { out.addPage(p) })
+          return savePdf(out, baseName(splitState.file.name) + '-pages.pdf')
+        })
+      })
+    }).then(function (info) {
+      done(st, list.length + ' 页', info, '保留 ' + list.length + '/' + total)
+    }).catch(function (err) { fail(st, '拆分', err) })
+      .then(function () { btn.disabled = !splitState.file })
+  })
+
+  /* ---- 删除页 ---- */
+  var delState = makeSinglePane({
+    dropId: 'deleteDrop', inputId: 'deleteInput', metaId: 'deleteMeta',
+    runId: 'deleteRun', statusId: 'deleteStatus',
+    onReady: function (s, ok) { $('deleteRun').disabled = !ok }
+  })
+  $('deleteRun').addEventListener('click', function () {
+    var st = $('deleteStatus')
+    if (!guard($('deleteRun'), st, delState)) return
+    var total = delState.pages
+    var expr = $('deletePages').value.trim()
+    if (!expr) { setStatus(st, '请填写要删除的页码（例：1,4-6）', 'err'); return }
+    var cut = parsePages(expr, total)
+    var keep = []
+    for (var i = 1; i <= total; i++) if (!cut.has(i)) keep.push(i)
+    if (!keep.length) { setStatus(st, '这样会把全部 ' + total + ' 页都删掉，已取消', 'err'); return }
+    if (keep.length === total) { setStatus(st, '没有匹配到任何页，检查一下页码写法', 'err'); return }
+    var btn = $('deleteRun'); btn.disabled = true
+    setStatus(st, '正在导出…')
+    loadDoc(delState.file).then(function (src) {
+      return PDFDocument.create().then(function (out) {
+        return out.copyPages(src, keep.map(function (i) { return i - 1 })).then(function (pages) {
+          pages.forEach(function (p) { out.addPage(p) })
+          return savePdf(out, baseName(delState.file.name) + '-trimmed.pdf')
+        })
+      })
+    }).then(function (info) {
+      done(st, keep.length + ' 页', info, '删掉 ' + (total - keep.length) + ' 页')
+    }).catch(function (err) { fail(st, '删除页', err) })
+      .then(function () { btn.disabled = !delState.file })
+  })
+
+  /* ---- 旋转 ---- */
+  var rotateDeg = 90
+  var rotState = makeSinglePane({
+    dropId: 'rotateDrop', inputId: 'rotateInput', metaId: 'rotateMeta',
+    runId: 'rotateRun', statusId: 'rotateStatus',
+    onReady: function (s, ok) { $('rotateRun').disabled = !ok }
+  })
+  $('rotateSeg').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-deg]')
+    if (!b) return
+    rotateDeg = parseInt(b.getAttribute('data-deg'), 10)
+    Array.prototype.forEach.call(this.querySelectorAll('button'), function (x) { x.classList.toggle('on', x === b) })
+  })
+  $('rotateRun').addEventListener('click', function () {
+    var st = $('rotateStatus')
+    if (!guard($('rotateRun'), st, rotState)) return
+    var btn = $('rotateRun'); btn.disabled = true
+    setStatus(st, '正在旋转…')
+    loadDoc(rotState.file).then(function (doc) {
+      var total = doc.getPageCount()
+      var targets = parsePages($('rotatePages').value, total)
+      var hit = 0
+      doc.getPages().forEach(function (p, i) {
+        if (!targets.has(i + 1)) return
+        var cur = p.getRotation().angle || 0
+        p.setRotation(degrees(((cur + rotateDeg) % 360 + 360) % 360))
+        hit++
+      })
+      return savePdf(doc, baseName(rotState.file.name) + '-rotated.pdf')
+        .then(function (info) { return { info: info, hit: hit } })
+    }).then(function (r) {
+      done(st, r.hit + ' 页 ×' + rotateDeg + '°', r.info)
+    }).catch(function (err) { fail(st, '旋转', err) })
+      .then(function () { btn.disabled = !rotState.file })
+  })
+
+  /* ---- 水印 ---- */
+  var wmPos = '居中'
+  var wmState = makeSinglePane({
+    dropId: 'wmDrop', inputId: 'wmInput', metaId: 'wmMeta',
+    runId: 'wmRun', statusId: 'wmStatus',
+    onReady: function (s, ok) { $('wmRun').disabled = !ok }
+  })
+  $('wmPos').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-pos]')
+    if (!b) return
+    wmPos = b.getAttribute('data-pos')
+    Array.prototype.forEach.call(this.querySelectorAll('button'), function (x) { x.classList.toggle('on', x === b) })
+  })
+  ;[['wmSize', 'wmSizeVal'], ['wmOpacity', 'wmOpVal'], ['wmAngle', 'wmAngleVal'], ['pnSize', 'pnSizeVal']].forEach(function (pair) {
+    var input = $(pair[0]); var out = $(pair[1])
+    if (!input || !out) return
+    input.addEventListener('input', function () { out.textContent = input.value })
+  })
+
+  /* 九宫格 → 绘制坐标；pos 形如 左上/居中/右下 */
+  function posToXY(pos, W, H, w, h, margin) {
+    var m = margin == null ? 28 : margin
+    var hKey = pos.charAt(0) === '左' ? 'L' : pos.charAt(0) === '右' ? 'R' : 'C'
+    var vKey = pos.charAt(1) === '上' ? 'T' : pos.charAt(1) === '下' ? 'B' : 'M'
+    var x = hKey === 'L' ? m : hKey === 'R' ? W - w - m : (W - w) / 2
+    var y = vKey === 'T' ? H - h - m : vKey === 'B' ? m : (H - h) / 2
+    return [x, y]
+  }
+
+  /* 文字 → 透明 PNG（pdf-lib 内置字体无 CJK，走 canvas 才能写中文） */
+  function textToPng(text, opts) {
+    var size = opts.size
+    var font = (opts.weight ? opts.weight + ' ' : '') + (size * 1.2) + 'px ' + opts.family
+    var probe = document.createElement('canvas').getContext('2d')
+    probe.font = font
+    var tw = probe.measureText(text).width
+    var pad = Math.ceil(size * 0.6)
+    var w = Math.ceil(tw) + pad * 2
+    var h = Math.ceil(size * 1.6) + pad * 2
+    /* 画布取「旋转后的真实外框」，别用对角线正方形：
+       后者 90% 是空白像素，导出的 PNG 会白白胖大十几倍 */
+    var rad = ((opts.angle || 0) * Math.PI) / 180
+    var ca = Math.abs(Math.cos(rad))
+    var sa = Math.abs(Math.sin(rad))
+    var cw = Math.ceil(w * ca + h * sa)
+    var ch = Math.ceil(w * sa + h * ca)
+    var cv = document.createElement('canvas')
+    cv.width = cw
+    cv.height = ch
+    var ctx = cv.getContext('2d')
+    ctx.translate(cw / 2, ch / 2)
+    ctx.rotate(rad)
+    ctx.globalAlpha = opts.opacity == null ? 1 : opts.opacity
+    ctx.fillStyle = opts.color
+    ctx.font = font
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(text, 0, 0)
+    return new Promise(function (res, rej) {
+      cv.toBlob(function (b) {
+        if (!b) { rej(new Error('canvas 导出失败')); return }
+        b.arrayBuffer().then(function (ab) { res({ bytes: new Uint8Array(ab), w: cw, h: ch }) })
+      }, 'image/png')
+    })
+  }
+
+  $('wmRun').addEventListener('click', function () {
+    var st = $('wmStatus')
+    if (!guard($('wmRun'), st, wmState)) return
+    var text = $('wmText').value.trim()
+    if (!text) { setStatus(st, '请填写水印文字', 'err'); return }
+    var size = parseInt($('wmSize').value, 10)
+    var opacity = parseInt($('wmOpacity').value, 10) / 100
+    var angle = parseInt($('wmAngle').value, 10)
+    var color = $('wmColor').value
+    var tiled = $('wmTile').checked
+    var btn = $('wmRun'); btn.disabled = true
+    setStatus(st, tiled ? '正在平铺水印…' : '正在加水印…')
+
+    textToPng(text, {
+      size: size, opacity: opacity, angle: angle, color: color,
+      family: "'Noto Serif SC','Microsoft YaHei',sans-serif"
+    }).then(function (png) {
+      return loadDoc(wmState.file).then(function (doc) {
+        return doc.embedPng(png.bytes).then(function (img) {
+          doc.getPages().forEach(function (page) {
+            var sz = page.getSize()
+            if (tiled) {
+              /* 平铺：按图片尺寸留出步进，铺满整页 */
+              var stepX = png.w * 0.72
+              var stepY = png.h * 0.72
+              var cols = Math.ceil(sz.width / stepX) + 1
+              var rows = Math.ceil(sz.height / stepY) + 1
+              for (var r = 0; r < rows; r++) {
+                for (var c = 0; c < cols; c++) {
+                  page.drawImage(img, {
+                    x: c * stepX - png.w * 0.2,
+                    y: r * stepY - png.h * 0.2,
+                    width: png.w,
+                    height: png.h
+                  })
+                }
+              }
+            } else {
+              var xy = posToXY(wmPos, sz.width, sz.height, png.w, png.h, 28)
+              page.drawImage(img, { x: xy[0], y: xy[1], width: png.w, height: png.h })
+            }
+          })
+          return savePdf(doc, baseName(wmState.file.name) + '-watermarked.pdf')
+            .then(function (info) { return { info: info, pages: doc.getPageCount() } })
+        })
+      })
+    }).then(function (r) {
+      done(st, r.pages + ' 页 · ' + (tiled ? '平铺' : wmPos), r.info)
+    }).catch(function (err) { fail(st, '水印', err) })
+      .then(function () { btn.disabled = !wmState.file })
+  })
+
+  /* ---- 页码 ---- */
+  var pnState = makeSinglePane({
+    dropId: 'pnDrop', inputId: 'pnInput', metaId: 'pnMeta',
+    runId: 'pnRun', statusId: 'pnStatus',
+    onReady: function (s, ok) { $('pnRun').disabled = !ok }
+  })
+  function hexToRgb(hex) {
+    var m = /^#?([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(hex)
+    if (!m) return rgb(0.2, 0.2, 0.2)
+    return rgb(parseInt(m[1], 16) / 255, parseInt(m[2], 16) / 255, parseInt(m[3], 16) / 255)
+  }
+  $('pnRun').addEventListener('click', function () {
+    var st = $('pnStatus')
+    if (!guard($('pnRun'), st, pnState)) return
+    var fmt = $('pnFormat').value
+    var pos = $('pnPos').value
+    var start = parseInt($('pnStart').value, 10) || 1
+    var size = parseInt($('pnSize').value, 10)
+    var color = hexToRgb($('pnColor').value)
+    var btn = $('pnRun'); btn.disabled = true
+    setStatus(st, '正在加页码…')
+
+    loadDoc(pnState.file).then(function (doc) {
+      return doc.embedFont(StandardFonts.Helvetica).then(function (font) {
+        var total = doc.getPageCount()
+        var targets = parsePages($('pnPages').value, total)
+        var hit = 0
+        doc.getPages().forEach(function (page, i) {
+          var pageNo = i + 1
+          if (!targets.has(pageNo)) return
+          var shown = start + (pageNo - 1)
+          var label
+          if (fmt === 'slash') label = shown + ' / ' + (start + total - 1)
+          else if (fmt === 'dash') label = '- ' + shown + ' -'
+          else if (fmt === 'pageof') label = 'Page ' + shown + ' of ' + (start + total - 1)
+          else label = String(shown)
+          var tw = font.widthOfTextAtSize(label, size)
+          var sz = page.getSize()
+          var m = 26
+          var x, y
+          if (pos === 'bc') { x = (sz.width - tw) / 2; y = m }
+          else if (pos === 'br') { x = sz.width - tw - m; y = m }
+          else if (pos === 'bl') { x = m; y = m }
+          else if (pos === 'tc') { x = (sz.width - tw) / 2; y = sz.height - size - m }
+          else { x = sz.width - tw - m; y = sz.height - size - m }
+          page.drawText(label, { x: x, y: y, size: size, font: font, color: color })
+          hit++
+        })
+        return savePdf(doc, baseName(pnState.file.name) + '-numbered.pdf')
+          .then(function (info) { return { info: info, hit: hit } })
+      })
+    }).then(function (r) {
+      done(st, r.hit + ' 页编号', r.info)
+    }).catch(function (err) { fail(st, '页码', err) })
+      .then(function () { btn.disabled = !pnState.file })
+  })
+
+  /* 供无头冒烟测试复用 */
+  window.__pdfToolkit = {
+    parsePages: parsePages,
+    posToXY: posToXY,
+    textToPng: textToPng,
+    ready: true
+  }
+})()
+</script>
+</body>
+</html>
